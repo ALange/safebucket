@@ -10,6 +10,7 @@ const (
 	AudienceMFALogin     = "auth:mfa:login"
 	AudienceMFAReset     = "auth:mfa:password-reset"
 	AudienceShareAccess  = "share:access"
+	AudienceAPIKey       = "api:key"
 )
 
 // JWT Token expiry times (in minutes).

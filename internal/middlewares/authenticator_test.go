@@ -9,6 +9,8 @@ import (
 
 	"github.com/safebucket/safebucket/internal/cache"
 	"github.com/safebucket/safebucket/internal/configuration"
+	"github.com/safebucket/safebucket/internal/database"
+	apierrors "github.com/safebucket/safebucket/internal/errors"
 	"github.com/safebucket/safebucket/internal/helpers"
 	"github.com/safebucket/safebucket/internal/models"
 	"github.com/safebucket/safebucket/internal/tests"
@@ -17,6 +19,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 const testJWTSecret = "test-secret-key-for-testing"
@@ -157,7 +161,7 @@ func TestAuthenticate(t *testing.T) {
 			}
 			recorder := httptest.NewRecorder()
 
-			handler := Authenticate(testJWTSecret, mc, 600)(
+			handler := Authenticate(testJWTSecret, mc, nil, 600)(
 				http.HandlerFunc(mockAuthenticatedNextHandler),
 			)
 			handler.ServeHTTP(recorder, req)
@@ -274,7 +278,7 @@ func TestAuthenticate_ExcludedPaths(t *testing.T) {
 				_, _ = w.Write([]byte("OK"))
 			})
 
-			handler := Authenticate(testJWTSecret, mc, 600)(simpleHandler)
+			handler := Authenticate(testJWTSecret, mc, nil, 600)(simpleHandler)
 			handler.ServeHTTP(recorder, req)
 
 			assert.Equal(t, tt.expectedStatus, recorder.Code, tt.description)
@@ -564,7 +568,7 @@ func TestAuthenticate_UserClaimsInContext(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+validToken)
 	recorder := httptest.NewRecorder()
 
-	handler := Authenticate(testJWTSecret, mc, 600)(testHandler)
+	handler := Authenticate(testJWTSecret, mc, nil, 600)(testHandler)
 	handler.ServeHTTP(recorder, req)
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
@@ -604,7 +608,7 @@ func TestAuthenticate_SessionRevocation(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer "+token)
 		recorder := httptest.NewRecorder()
 
-		handler := Authenticate(testJWTSecret, mc, refreshTokenExpiry)(
+		handler := Authenticate(testJWTSecret, mc, nil, refreshTokenExpiry)(
 			http.HandlerFunc(mockAuthenticatedNextHandler),
 		)
 		handler.ServeHTTP(recorder, req)
@@ -628,7 +632,7 @@ func TestAuthenticate_SessionRevocation(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer "+token)
 		recorder := httptest.NewRecorder()
 
-		handler := Authenticate(testJWTSecret, mc, refreshTokenExpiry)(
+		handler := Authenticate(testJWTSecret, mc, nil, refreshTokenExpiry)(
 			http.HandlerFunc(mockAuthenticatedNextHandler),
 		)
 		handler.ServeHTTP(recorder, req)
@@ -649,7 +653,7 @@ func TestAuthenticate_SessionRevocation(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer "+token)
 		recorder := httptest.NewRecorder()
 
-		handler := Authenticate(testJWTSecret, mc, refreshTokenExpiry)(
+		handler := Authenticate(testJWTSecret, mc, nil, refreshTokenExpiry)(
 			http.HandlerFunc(mockAuthenticatedNextHandler),
 		)
 		handler.ServeHTTP(recorder, req)
@@ -671,7 +675,7 @@ func TestAuthenticate_SessionRevocation(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer "+token)
 		recorder := httptest.NewRecorder()
 
-		handler := Authenticate(testJWTSecret, mc, refreshTokenExpiry)(
+		handler := Authenticate(testJWTSecret, mc, nil, refreshTokenExpiry)(
 			http.HandlerFunc(mockAuthenticatedNextHandler),
 		)
 		handler.ServeHTTP(recorder, req)
@@ -692,7 +696,7 @@ func TestAuthenticate_SessionRevocation(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer "+token)
 		recorder := httptest.NewRecorder()
 
-		handler := Authenticate(testJWTSecret, mc, refreshTokenExpiry)(
+		handler := Authenticate(testJWTSecret, mc, nil, refreshTokenExpiry)(
 			http.HandlerFunc(mockAuthenticatedNextHandler),
 		)
 		handler.ServeHTTP(recorder, req)
@@ -740,7 +744,7 @@ func TestAuthenticate_ContextPropagation(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 
-	handler := Authenticate(testJWTSecret, mc, 600)(testHandler)
+	handler := Authenticate(testJWTSecret, mc, nil, 600)(testHandler)
 	handler.ServeHTTP(recorder, req)
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
@@ -770,7 +774,7 @@ func TestAuthenticate_BearerHeaderWinsOverCookie(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+headerToken)
 
 	recorder := httptest.NewRecorder()
-	Authenticate(testJWTSecret, mc, 600)(next).ServeHTTP(recorder, req)
+	Authenticate(testJWTSecret, mc, nil, 600)(next).ServeHTTP(recorder, req)
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.Equal(t, headerUser.Email, captured.Email,
@@ -803,7 +807,7 @@ func TestAuthenticate_MFACookieWinsOverAccessCookie(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: "safebucket_mfa_token", Value: mfaToken})
 
 	recorder := httptest.NewRecorder()
-	Authenticate(testJWTSecret, mc, 600)(next).ServeHTTP(recorder, req)
+	Authenticate(testJWTSecret, mc, nil, 600)(next).ServeHTTP(recorder, req)
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.Equal(t, mfaUser.Email, captured.Email,
@@ -829,8 +833,105 @@ func TestAuthenticate_CookieFallback(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: "safebucket_access_token", Value: token})
 
 	recorder := httptest.NewRecorder()
-	Authenticate(testJWTSecret, mc, 600)(next).ServeHTTP(recorder, req)
+	Authenticate(testJWTSecret, mc, nil, 600)(next).ServeHTTP(recorder, req)
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.Equal(t, user.Email, captured.Email)
+}
+
+func setupAuthSQLiteDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	_, err = sqlDB.Exec("PRAGMA foreign_keys = ON")
+	require.NoError(t, err)
+	database.RunMigrations(sqlDB, database.DialectSQLite)
+	database.RegisterCallbacks(db)
+	return db
+}
+
+func TestAuthenticate_APIKeyAudience(t *testing.T) {
+	mc := cache.NewMemoryCache()
+	t.Cleanup(func() { mc.Close() })
+	db := setupAuthSQLiteDB(t)
+
+	user := models.User{
+		Email:        "api-key@example.com",
+		ProviderType: models.LocalProviderType,
+		ProviderKey:  "local",
+		Role:         models.RoleUser,
+	}
+	require.NoError(t, db.Create(&user).Error)
+
+	apiKey := models.APIKey{
+		UserID: user.ID,
+		Name:   "automation",
+		Access: models.APIKeyAccessReadWrite,
+	}
+	require.NoError(t, db.Create(&apiKey).Error)
+
+	token, err := helpers.NewAPIKeyToken(
+		testJWTSecret,
+		&user,
+		apiKey.ID,
+		apiKey.Access,
+		nil,
+	)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/buckets", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	recorder := httptest.NewRecorder()
+
+	Authenticate(testJWTSecret, mc, db, 600)(http.HandlerFunc(mockAuthenticatedNextHandler)).ServeHTTP(recorder, req)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+
+	now := time.Now()
+	require.NoError(t, db.First(&apiKey, "id = ?", apiKey.ID).Error)
+	require.NotNil(t, apiKey.LastUsedAt)
+	assert.WithinDuration(t, now, *apiKey.LastUsedAt, 2*time.Second)
+}
+
+func TestAuthenticate_APIKeyRevoked(t *testing.T) {
+	mc := cache.NewMemoryCache()
+	t.Cleanup(func() { mc.Close() })
+	db := setupAuthSQLiteDB(t)
+
+	user := models.User{
+		Email:        "api-key-revoked@example.com",
+		ProviderType: models.LocalProviderType,
+		ProviderKey:  "local",
+		Role:         models.RoleUser,
+	}
+	require.NoError(t, db.Create(&user).Error)
+
+	revokedAt := time.Now().Add(-time.Minute)
+	apiKey := models.APIKey{
+		UserID:    user.ID,
+		Name:      "revoked",
+		Access:    models.APIKeyAccessReadOnly,
+		RevokedAt: &revokedAt,
+	}
+	require.NoError(t, db.Create(&apiKey).Error)
+
+	token, err := helpers.NewAPIKeyToken(
+		testJWTSecret,
+		&user,
+		apiKey.ID,
+		apiKey.Access,
+		nil,
+	)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/buckets", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	recorder := httptest.NewRecorder()
+
+	Authenticate(testJWTSecret, mc, db, 600)(http.HandlerFunc(mockAuthenticatedNextHandler)).ServeHTTP(recorder, req)
+	tests.AssertJSONResponse(t, recorder, http.StatusForbidden, models.Error{
+		Status: http.StatusForbidden,
+		Error:  []string{apierrors.CodeForbidden},
+	})
 }

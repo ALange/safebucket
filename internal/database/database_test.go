@@ -37,7 +37,7 @@ func TestSQLite_Migrations(t *testing.T) {
 	require.NoError(t, err)
 	defer sqlDB.Close()
 
-	tables := []string{"users", "buckets", "memberships", "folders", "files", "invites", "challenges", "mfa_devices"}
+	tables := []string{"users", "buckets", "memberships", "folders", "files", "invites", "challenges", "mfa_devices", "api_keys"}
 	for _, table := range tables {
 		var count int
 		err = sqlDB.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&count)

@@ -14,6 +14,8 @@ type UserClaims struct {
 	Provider    string     `json:"provider"`
 	MFA         bool       `json:"mfa"`
 	SID         string     `json:"sid,omitempty"`
+	APIKeyID    *uuid.UUID `json:"api_key_id,omitempty"`
+	APIKeyScope string     `json:"api_key_scope,omitempty"`
 	ChallengeID *uuid.UUID `json:"challenge_id,omitempty"`
 }
 

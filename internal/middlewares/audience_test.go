@@ -299,7 +299,7 @@ func TestGetRouteAllowedAudiences(t *testing.T) {
 	})
 
 	t.Run("returns nil for unconfigured route", func(t *testing.T) {
-		audiences := getRouteAllowedAudiences("/api/v1/buckets", "GET")
+		audiences := getRouteAllowedAudiences("/api/v1/users", "GET")
 		assert.Nil(t, audiences)
 	})
 

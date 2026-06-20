@@ -382,7 +382,7 @@ func BuildAPIRouter(
 	r.Route("/api", func(apiRouter chi.Router) {
 		apiRouter.Use(m.CSRFGuard(config.App.AllowedOrigins))
 		apiRouter.Use(m.ClientInfo(config.App.TrustedProxies))
-		apiRouter.Use(m.Authenticate(authConfig.TokenSecret, cache, configuration.RefreshTokenExpiry))
+		apiRouter.Use(m.Authenticate(authConfig.TokenSecret, cache, db, configuration.RefreshTokenExpiry))
 		apiRouter.Use(m.AudienceValidate)
 		apiRouter.Use(m.MFAValidate(db, providers))
 		apiRouter.Use(m.RateLimit(
