@@ -2,6 +2,7 @@ package middlewares
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -12,13 +13,16 @@ import (
 	"github.com/safebucket/safebucket/internal/configuration"
 	"github.com/safebucket/safebucket/internal/helpers"
 	"github.com/safebucket/safebucket/internal/models"
+	"github.com/safebucket/safebucket/internal/sql"
 	"github.com/safebucket/safebucket/internal/tracing"
+	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 type AuthExcludedKey struct{}
 
 func Authenticate(
-	jwtSecret string, c cache.ICache, refreshTokenExpiry int,
+	jwtSecret string, c cache.ICache, db *gorm.DB, refreshTokenExpiry int,
 ) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
@@ -73,11 +77,53 @@ func Authenticate(
 				}
 			}
 
+			if userClaims.Audience[0] == configuration.AudienceAPIKey {
+				if err := validateAPIKeyToken(db, userClaims); err != nil {
+					helpers.RespondWithErrorCtx(r.Context(), w, 403, []string{apierrors.CodeForbidden})
+					return
+				}
+			}
+
 			ctx = context.WithValue(ctx, models.UserClaimKey{}, userClaims)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		}
 		return http.HandlerFunc(fn)
 	}
+}
+
+func validateAPIKeyToken(db *gorm.DB, claims models.UserClaims) error {
+	if db == nil || claims.APIKeyID == nil {
+		return errors.New("API key lookup unavailable")
+	}
+
+	apiKey, err := sql.GetAPIKeyByID(db, *claims.APIKeyID)
+	if err != nil {
+		return err
+	}
+
+	if apiKey.UserID != claims.UserID || apiKey.RevokedAt != nil {
+		if apiKey.RevokedAt != nil {
+			return errors.New("API key revoked")
+		}
+		return errors.New("API key does not belong to user")
+	}
+
+	if apiKey.ExpiresAt != nil && apiKey.ExpiresAt.Before(time.Now()) {
+		return errors.New("expired API key")
+	}
+
+	if string(apiKey.Access) != claims.APIKeyScope {
+		return errors.New("invalid API key scope")
+	}
+
+	now := time.Now()
+	if err := db.Model(&apiKey).Update("last_used_at", &now).Error; err != nil {
+		zap.L().Warn("failed to update API key last_used_at",
+			zap.String("api_key_id", apiKey.ID.String()),
+			zap.Error(err),
+		)
+	}
+	return nil
 }
 
 func isPathExcludedFromAuth(path, method string) bool {

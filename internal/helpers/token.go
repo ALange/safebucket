@@ -28,6 +28,8 @@ type tokenConfig struct {
 	expiryMinutes int
 	challengeID   *uuid.UUID
 	sid           string
+	apiKeyID      *uuid.UUID
+	apiKeyScope   string
 }
 
 func boolPtr(b bool) *bool {
@@ -166,6 +168,12 @@ func createToken(jwtSecret string, user *models.User, config tokenConfig) (strin
 
 	if config.challengeID != nil {
 		claims.ChallengeID = config.challengeID
+	}
+	if config.apiKeyID != nil {
+		claims.APIKeyID = config.apiKeyID
+	}
+	if config.apiKeyScope != "" {
+		claims.APIKeyScope = config.apiKeyScope
 	}
 
 	return signAndEncryptToken(jwtSecret, claims)
@@ -315,5 +323,33 @@ func NewRestrictedAccessToken(
 		mfa:           boolPtr(mfaVerified),
 		expiryMinutes: configuration.MFATokenExpiry,
 		challengeID:   challengeID,
+	})
+}
+
+func NewAPIKeyToken(
+	jwtSecret string,
+	user *models.User,
+	apiKeyID uuid.UUID,
+	scope models.APIKeyAccess,
+	expiresAt *time.Time,
+) (string, error) {
+	expiryMinutes := configuration.RefreshTokenExpiry
+	if expiresAt != nil {
+		remainingDuration := time.Until(*expiresAt)
+		if remainingDuration <= 0 {
+			return "", errors.New("api key is expired")
+		}
+		remaining := int(remainingDuration.Minutes())
+		if remaining < 1 {
+			remaining = 1
+		}
+		expiryMinutes = remaining
+	}
+	return createToken(jwtSecret, user, tokenConfig{
+		audience:      configuration.AudienceAPIKey,
+		provider:      "api_key",
+		expiryMinutes: expiryMinutes,
+		apiKeyID:      &apiKeyID,
+		apiKeyScope:   string(scope),
 	})
 }

@@ -99,6 +99,11 @@ var AuthAudienceRules = []AuthAudienceRule{
 		Method:           http.MethodPost,
 		AllowedAudiences: []string{AudienceAccessToken, AudienceMFALogin, AudienceMFAReset},
 	},
+	{
+		Pattern:          regexp.MustCompile(`^/api/v1/buckets(/.*)?$`),
+		Method:           "*",
+		AllowedAudiences: []string{AudienceAccessToken, AudienceAPIKey},
+	},
 }
 
 type MFABypassRule struct {

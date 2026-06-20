@@ -36,6 +36,7 @@ type BucketService struct {
 
 func (s BucketService) Routes() chi.Router {
 	r := chi.NewRouter()
+	r.Use(m.APIKeyAccess)
 
 	r.With(m.AuthorizeRole(models.RoleGuest)).
 		Get("/", handlers.GetListHandler(s.GetBucketList))

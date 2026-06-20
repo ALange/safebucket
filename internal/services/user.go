@@ -60,6 +60,11 @@ func (s UserService) Routes() chi.Router {
 			RefreshTokenExpiry: s.RefreshTokenExpiry,
 			ActivityLogger:     s.ActivityLogger,
 		}.Routes())
+
+		r.Mount("/api-keys", APIKeyService{
+			DB:         s.DB,
+			AuthConfig: s.AuthConfig,
+		}.Routes())
 	})
 	return r
 }
