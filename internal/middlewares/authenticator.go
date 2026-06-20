@@ -93,7 +93,7 @@ func Authenticate(
 
 func validateAPIKeyToken(db *gorm.DB, claims models.UserClaims) error {
 	if db == nil || claims.APIKeyID == nil {
-		return errors.New("invalid api key")
+		return errors.New("API key lookup unavailable")
 	}
 
 	apiKey, err := sql.GetAPIKeyByID(db, *claims.APIKeyID)
@@ -102,15 +102,18 @@ func validateAPIKeyToken(db *gorm.DB, claims models.UserClaims) error {
 	}
 
 	if apiKey.UserID != claims.UserID || apiKey.RevokedAt != nil {
-		return errors.New("invalid api key")
+		if apiKey.RevokedAt != nil {
+			return errors.New("API key revoked")
+		}
+		return errors.New("API key does not belong to user")
 	}
 
 	if apiKey.ExpiresAt != nil && apiKey.ExpiresAt.Before(time.Now()) {
-		return errors.New("expired api key")
+		return errors.New("expired API key")
 	}
 
 	if string(apiKey.Access) != claims.APIKeyScope {
-		return errors.New("invalid api key scope")
+		return errors.New("invalid API key scope")
 	}
 
 	now := time.Now()
