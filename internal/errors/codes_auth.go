@@ -11,6 +11,7 @@ const (
 	CodeTokenGenerationFailed      = "TOKEN_GENERATION_FAILED"
 	CodeGenerateAccessTokenFailed  = "GENERATE_ACCESS_TOKEN_FAILED"
 	CodeGenerateRefreshTokenFailed = "GENERATE_REFRESH_TOKEN_FAILED"
+	CodeInvalidAPIKeyExpiry        = "INVALID_API_KEY_EXPIRY"
 )
 
 const (

@@ -15,6 +15,7 @@ import (
 	"github.com/safebucket/safebucket/internal/models"
 	"github.com/safebucket/safebucket/internal/sql"
 	"github.com/safebucket/safebucket/internal/tracing"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -113,7 +114,12 @@ func validateAPIKeyToken(db *gorm.DB, claims models.UserClaims) error {
 	}
 
 	now := time.Now()
-	_ = db.Model(&apiKey).Update("last_used_at", &now).Error
+	if err := db.Model(&apiKey).Update("last_used_at", &now).Error; err != nil {
+		zap.L().Warn("failed to update API key last_used_at",
+			zap.String("api_key_id", apiKey.ID.String()),
+			zap.Error(err),
+		)
+	}
 	return nil
 }
 

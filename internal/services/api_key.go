@@ -42,13 +42,18 @@ func (s APIKeyService) Routes() chi.Router {
 }
 
 func (s APIKeyService) ListAPIKeys(
-	_ *zap.Logger,
+	logger *zap.Logger,
 	_ models.UserClaims,
 	ids uuid.UUIDs,
 ) []models.APIKey {
 	userID := ids[0]
 	var keys []models.APIKey
-	s.DB.Where("user_id = ? AND revoked_at IS NULL", userID).Order("created_at DESC").Find(&keys)
+	if err := s.DB.Where("user_id = ? AND revoked_at IS NULL", userID).
+		Order("created_at DESC").
+		Find(&keys).Error; err != nil {
+		logger.Error("Failed to list API keys", zap.Error(err), zap.String("user_id", userID.String()))
+		return []models.APIKey{}
+	}
 	return keys
 }
 
@@ -66,7 +71,7 @@ func (s APIKeyService) CreateAPIKey(
 	}
 
 	if body.ExpiresAt != nil && !body.ExpiresAt.After(time.Now()) {
-		return models.APIKeyCreateResponse{}, apierrors.New(http.StatusBadRequest, apierrors.CodeBadRequest)
+		return models.APIKeyCreateResponse{}, apierrors.New(http.StatusBadRequest, apierrors.CodeInvalidAPIKeyExpiry)
 	}
 
 	apiKey := models.APIKey{

@@ -335,7 +335,11 @@ func NewAPIKeyToken(
 ) (string, error) {
 	expiryMinutes := configuration.RefreshTokenExpiry
 	if expiresAt != nil {
-		remaining := int(time.Until(*expiresAt).Minutes())
+		remainingDuration := time.Until(*expiresAt)
+		if remainingDuration <= 0 {
+			return "", errors.New("api key is expired")
+		}
+		remaining := int(remainingDuration.Minutes())
 		if remaining < 1 {
 			remaining = 1
 		}
